@@ -345,3 +345,137 @@ class VideoBuilder:
                 "error during video rendering"
             )
             return False
+
+
+async def build_video(
+    input_path: str,
+    output_path: str,
+    caption_style_preset: str = "cartoon",
+    subtitle_position: str = "center",
+    animation_style: str = "word",
+    caption_style: str = "segment",
+    max_length: int = 30,
+    width: int = 1080,
+    height: int = 1920,
+    prompt: str = None,
+    **kwargs
+):
+    """
+    Build a captioned video with support for different caption styles.
+    
+    Args:
+        input_path: Path to input media file
+        output_path: Path for output video
+        caption_style_preset: Visual style preset for captions
+        subtitle_position: Position of subtitles (top, center, bottom)
+        animation_style: Animation style for captions
+        caption_style: Caption timing style ('segment' or 'word-by-word')
+        max_length: Maximum characters per line
+        width: Output video width
+        height: Output video height
+        prompt: Optional prompt for processing
+        **kwargs: Additional arguments
+    
+    Returns:
+        str: Path to the generated video file
+    """
+    from video.media import MediaUtils
+    from video.caption import CaptionBuilder
+    from video.stt import STT
+    import tempfile
+    import os
+    
+    # Initialize components
+    media_utils = MediaUtils()
+    caption_builder = CaptionBuilder()
+    stt = STT()
+    
+    # Extract audio and generate captions
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+        temp_audio_path = temp_audio.name
+    
+    try:
+        # Extract audio from input media
+        success = media_utils.extract_audio(input_path, temp_audio_path)
+        if not success:
+            raise Exception("Failed to extract audio from input media")
+        
+        # Generate captions using STT
+        captions = stt.transcribe_audio(temp_audio_path)
+        if not captions:
+            raise Exception("Failed to generate captions from audio")
+        
+        # Create subtitle file
+        with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as temp_subtitle:
+            temp_subtitle_path = temp_subtitle.name
+        
+        try:
+            if caption_style == "word-by-word":
+                # Use karaoke-style subtitles
+                caption_builder.create_karaoke_subtitle(
+                    captions=captions,
+                    dimensions=(width, height),
+                    output_path=temp_subtitle_path,
+                    font_size=120,
+                    font_name="Arial",
+                    font_bold=True,
+                    font_italic=False,
+                    subtitle_position=subtitle_position,
+                    font_color="#fff",
+                    shadow_color="#000",
+                    shadow_transparency=0.4,
+                    shadow_blur=10,
+                    stroke_color="#000",
+                    stroke_size=5,
+                )
+            else:
+                # Use segment-style subtitles (existing logic)
+                caption_builder.create_subtitle(
+                    segments=captions,
+                    dimensions=(width, height),
+                    output_path=temp_subtitle_path,
+                    caption_style_preset=caption_style_preset,
+                    subtitle_position=subtitle_position,
+                    animation_style=animation_style,
+                    max_length=max_length,
+                )
+            
+            # Build video using VideoBuilder
+            builder = VideoBuilder(dimensions=(width, height))
+            builder.set_media_utils(media_utils)
+            
+            # Set background (use input as background if it's a video, or create a simple background)
+            media_info = media_utils.get_video_info(input_path)
+            if media_info:
+                builder.set_background_video(input_path)
+            else:
+                # If input is audio only, we need a background image
+                # For now, create a simple colored background
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_bg:
+                    temp_bg_path = temp_bg.name
+                
+                # Create a simple background image (this would need PIL or similar)
+                # For now, we'll assume there's a default background or skip this
+                builder.set_background_image(temp_bg_path if os.path.exists(temp_bg_path) else input_path)
+            
+            builder.set_audio(temp_audio_path)
+            builder.set_captions(temp_subtitle_path)
+            builder.set_output_path(output_path)
+            
+            # Execute the build
+            success = builder.execute()
+            if not success:
+                raise Exception("Failed to build video")
+            
+            return output_path
+            
+        finally:
+            # Clean up subtitle file
+            if os.path.exists(temp_subtitle_path):
+                os.unlink(temp_subtitle_path)
+    
+    finally:
+        # Clean up audio file
+        if os.path.exists(temp_audio_path):
+            os.unlink(temp_audio_path)

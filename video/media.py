@@ -712,34 +712,38 @@ class MediaUtils:
         input_video_path: str,
         overlay_video_path: str,
         output_video_path: str,
-        color: str = "green",
-        similarity: float = 0.1,
-        blend: float = 0.1,
+        color: str = "black",
+        similarity: float = 0.15,
+        blend: float = 0.2,
     ):
         """
         Applies a colorkey overlay to a video using FFmpeg.
+        Loops the overlay to match the duration of the main video.
+        Perfect for vintage dust/scratch overlays.
         """
-        
-        """
-            ffmpeg -i input.mp4 -stream_loop -1 -i black_dust.mp4 \
-            -filter_complex "[1]colorkey=0x000000:0.1:0.1[ckout];[0][ckout]overlay" \
-            -shortest \
-            -c:v libx264 -preset ultrafast -crf 18 \
-            -c:a copy \
-            output.mp4
-        """
-        
         start = time.time()
         info = self.get_video_info(input_video_path)
         video_duration = info.get("duration", 0)
-        
+
         if not video_duration:
-            logger.error("failed to get video duration from input video")
+            logger.error("Failed to get video duration from input video")
             return False
-        
+
+        # Enhanced color handling for vintage effects
         color = color.lstrip("#")
-        if self.is_hex_color(color):
+        if color.lower() == "black":
+            color = "0x000000"
+        elif self.is_hex_color(color):
             color = f"0x{color.upper()}"
+        elif not color.startswith("0x"):
+            # Handle named colors
+            color_map = {
+                "green": "0x00FF00",
+                "blue": "0x0000FF",
+                "red": "0xFF0000",
+                "white": "0xFFFFFF"
+            }
+            color = color_map.get(color.lower(), "0x000000")
         
         context_logger = logger.bind(
             input_video_path=input_video_path,
@@ -750,25 +754,22 @@ class MediaUtils:
             similarity=similarity,
             blend=blend,
         )
-        context_logger.debug("Starting colorkey overlay process")
-        
-        context_logger = context_logger.bind(
-            video_duration=video_duration,
-        )
-        
+        context_logger.debug("Starting enhanced colorkey overlay process for vintage effect")
+
+        # Enhanced FFmpeg command for better vintage texture overlay
         cmd = [
             self.ffmpeg_path, "-y",
             "-i", input_video_path,
-            "-stream_loop", "-1",
+            "-stream_loop", "-1",  # Loop the overlay video indefinitely
             "-i", overlay_video_path,
-            "-filter_complex", f"[1:v]colorkey={color}:{similarity}:{blend}[ckout];[0:v][ckout]overlay=eof_action=repeat[v]",
+            "-filter_complex", f"[1:v]colorkey={color}:{similarity}:{blend}[ckout];[0:v][ckout]overlay=shortest=1:eof_action=repeat[v]",
             "-map", "[v]",
-            "-map", "0:a",
+            "-map", "0:a?",  # Use the audio from the input video if it exists
             "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "18",
+            "-preset", "fast",  # Better quality than ultrafast
+            "-crf", "22",  # Slightly higher quality
             "-c:a", "copy",
-            "-t", f"{video_duration}s",
+            "-t", str(video_duration),
             output_video_path,
         ]
 
@@ -793,6 +794,59 @@ class MediaUtils:
             context_logger.bind(error=str(e)).error(
                 "error adding colorkey overlay to video",
             )
+            return False
+
+    def apply_vintage_filter(
+        self,
+        input_path: str,
+        output_path: str,
+        grain_strength: int = 8,
+        vignette_intensity: float = 0.1,
+    ) -> bool:
+        """
+        Applies a vintage filter with film grain and a vignette to a video.
+        """
+        start = time.time()
+        video_info = self.get_video_info(input_path)
+        expected_duration = video_info.get("duration", 0)
+
+        # The vignette filter in FFmpeg uses an expression. 'PI/60' is a subtle start.
+        # A higher divisor means a more subtle vignette. We can link it to intensity.
+        vignette_angle = f"PI/{max(2, 60 * (1 - vignette_intensity))}"
+
+        context_logger = logger.bind(
+            input_path=input_path,
+            output_path=output_path,
+            grain_strength=grain_strength,
+            vignette_angle=vignette_angle,
+        )
+        context_logger.debug("Applying vintage filter")
+
+        cmd = [
+            self.ffmpeg_path, "-y",
+            "-i", input_path,
+            "-vf", f"noise=alls={grain_strength}:allf=t+u,vignette='{vignette_angle}'",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "22",
+            "-c:a", "copy",
+            output_path,
+        ]
+
+        success = self.execute_ffmpeg_command(
+            cmd,
+            "apply vintage filter",
+            expected_duration=expected_duration,
+            show_progress=True,
+        )
+
+        if success:
+            context_logger.bind(execution_time=time.time() - start).info(
+                "Vintage filter applied successfully"
+            )
+            return True
+        else:
+            context_logger.error("Failed to apply vintage filter")
             return False
         
     def convert_pcm_to_wav(
