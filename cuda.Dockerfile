@@ -36,6 +36,7 @@ ENV LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/nvidia/cudnn/lib:$LD
 COPY api_server /app/api_server
 COPY utils /app/utils
 COPY video /app/video
+COPY assets/overlay /app/assets/overlay
 COPY server.py /app/server.py
 
 ENV PYTHONUNBUFFERED=1

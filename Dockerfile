@@ -11,9 +11,13 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
+COPY assets/HappyBoy.ttf /usr/share/fonts/truetype/HappyBoy.ttf
+RUN fc-cache -f -v
+
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
+COPY assets/overlay /app/assets/overlay
 COPY api_server /app/api_server
 COPY utils /app/utils
 COPY video /app/video

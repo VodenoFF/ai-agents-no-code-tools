@@ -239,11 +239,14 @@ class Caption:
 
     def create_subtitle(
         self,
-        segments,
+        segments, # This can be segments OR a raw word list for karaoke
         dimensions: Tuple[int, int],
         output_path: str,
-        font_size=24, 
+        font_size=24,
         font_color="#fff",
+        font_transparency=1.0,  # Add this parameter, default fully opaque
+        secondary_font_transparency=0.0,
+        stroke_transparency=0.0,
         shadow_color="#000",
         shadow_transparency=0.1,
         shadow_blur=0,
@@ -253,17 +256,33 @@ class Caption:
         font_bold=True,
         font_italic=False,
         subtitle_position="center",
+        animation_style="segment", # Parameter to control animation
+        max_length=80,
+        lines=2,
     ):
         width, height = dimensions
         bold_value = -1 if font_bold else 0
         italic_value = -1 if font_italic else 0
-        
-        position_from_top = 0.2
+
+        # --- ENHANCED STYLE FOR BETTER READABILITY ---
+        # Define colors for the smooth-fill karaoke effect with improved contrast
+        # PrimaryColour (unspoken text): More visible at 70% opacity for better readability
+        # SecondaryColour (spoken text): Fully opaque white for maximum contrast
+        primary_color_ass = self.hex_to_ass(font_color, font_transparency)
+        secondary_color_ass = self.hex_to_ass(font_color, secondary_font_transparency)
+        stroke_color_ass = self.hex_to_ass(stroke_color, stroke_transparency)
+        # --- ENHANCED STYLE END ---
+
+        # Default alignment to bottom-center (5), which is better for vertical video
+        alignment = 5
+        margin_v = 150 # Margin from the bottom
         if subtitle_position == "center":
-            position_from_top = 0.45
-        if subtitle_position == "bottom":
-            position_from_top = 0.75
-        
+            alignment = 5 # Middle Center alignment is also 5 with different margins
+            margin_v = int(height / 2)
+        elif subtitle_position == "top":
+            alignment = 8 # Top Center
+            margin_v = 50
+
         ass_content = """[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -271,7 +290,7 @@ PlayResY: {height}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},{font_size},{font_color},&H000000FF,{stroke_color},&H00000000,{bold},{italic},0,0,100,100,0,0,1,{stroke_size},0,8,20,20,20,1
+Style: Default,{font_name},{font_size},{primary_color},{secondary_color},{stroke_color},&H00000000,{bold},{italic},0,0,100,100,0,0,1,{stroke_size},0,{alignment},20,20,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -279,68 +298,92 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             width=width,
             height=height,
             font_size=font_size,
-            font_color=self.hex_to_ass(font_color),
-            stroke_color=self.hex_to_ass(stroke_color),
+            primary_color=primary_color_ass,
+            secondary_color=secondary_color_ass,
+            stroke_color=stroke_color_ass,
             stroke_size=stroke_size,
             font_name=font_name,
             bold=bold_value,
-            italic=italic_value
+            italic=italic_value,
+            alignment=alignment,
+            margin_v=margin_v
         )
 
         pos_x = int(width / 2)
-        pos_y = int(height * position_from_top)
+        pos_y = int(height * 0.75) # Default Y position
+        if subtitle_position == "center":
+            pos_y = int(height / 2)
+        elif subtitle_position == "top":
+            pos_y = int(height * 0.25)
 
-        # Process each segment and add to the subtitle file
-        for segment in segments:
-            start_time = self.format_time(segment["start_ts"])
-            end_time = self.format_time(segment["end_ts"])
+        # This part of the logic remains the same as the previous fix
+        if animation_style == "word":
+            words = segments
+            if not words:
+                with open(output_path, "w") as f: f.write(ass_content)
+                return
 
-            # Create text with line breaks
-            text_lines = segment["text"]
-            formatted_text = ""
-            for i, line in enumerate(text_lines):
-                if line:  # Only add non-empty lines
-                    if i > 0:  # Add line break if not the first line
-                        formatted_text += "\\N"
-                    formatted_text += line
+            full_karaoke_text = ""
+            current_line_length = 0
 
-            # Create shadow if shadow_blur is specified or if we want a drop shadow effect
-            if shadow_blur > 0 or shadow_transparency < 1.0:
-                # Convert shadow color with transparency
+            for i, word in enumerate(words):
+                word_text = word["text"].strip()
+                if not word_text: continue
+
+                duration_cs = max(1, int((word["end_ts"] - word["start_ts"]) * 100))
+
+                if word_text in string.punctuation:
+                    # Always attach punctuation to previous word, never start a new line with it
+                    full_karaoke_text = full_karaoke_text.rstrip()
+                    full_karaoke_text += f"{{\\k{duration_cs}}}{word_text}"
+                    # Add a space after punctuation if the next word is not punctuation and not end
+                    if i + 1 < len(words):
+                        next_word_text = words[i + 1]["text"].strip()
+                        if next_word_text and next_word_text not in string.punctuation:
+                            full_karaoke_text += " "
+                    # Do not increment current_line_length for punctuation
+                else:
+                    if current_line_length > 0 and current_line_length + len(word_text) + 1 > max_length:
+                        full_karaoke_text += "\\N"
+                        current_line_length = 0
+                    full_karaoke_text += f"{{\\k{duration_cs}}}{word_text}"
+                    # Add space if next word is not punctuation
+                    if i + 1 < len(words):
+                        next_word_text = words[i + 1]["text"].strip()
+                        if next_word_text and next_word_text not in string.punctuation:
+                            full_karaoke_text += " "
+                    current_line_length += len(word_text) + 1
+
+            start_time = self.format_time(words[0]["start_ts"])
+            end_time = self.format_time(words[-1]["end_ts"])
+
+            # Enhanced Shadow Layer for better readability
+            shadow_color_ass = self.hex_to_ass(shadow_color, shadow_transparency)
+            # Larger shadow offset and enhanced blur for better text separation
+            shadow_override = f"\\pos({pos_x + 4},{pos_y + 4})\\blur{shadow_blur}\\1c{shadow_color_ass}"
+            ass_content += f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{{{shadow_override}}}{full_karaoke_text.strip()}\n"
+
+            # Main text layer - clean and crisp
+            ass_content += f"Dialogue: 1,{start_time},{end_time},Default,,0,0,0,,{full_karaoke_text.strip()}\n"
+
+        else: # Segment-based logic
+            for segment in segments:
+                start_time = self.format_time(segment["start_ts"])
+                end_time = self.format_time(segment["end_ts"])
+                formatted_text = "\\N".join(line for line in segment["text"] if line)
+
+                # Shadow layer
                 shadow_color_ass = self.hex_to_ass(shadow_color, shadow_transparency)
-                
-                # Offset shadow position slightly for drop shadow effect
-                shadow_pos_x = pos_x + 2
-                shadow_pos_y = pos_y + 2
-                
-                # For shadow text, use shadow color only for primary color and set proper alpha
-                # Only apply shadow color to primary color (\1c) and use alpha for transparency
-                shadow_override_tags = f"\\pos({shadow_pos_x},{shadow_pos_y})\\1c{shadow_color_ass}\\bord0"
-                
-                # Add alpha transparency if needed
-                if shadow_transparency > 0:
-                    alpha_hex = hex(int((1.0 - shadow_transparency) * 255))[2:].upper().zfill(2)
-                    shadow_override_tags += f"\\1a&H{alpha_hex}&"
-                
-                if shadow_blur > 0:
-                    shadow_override_tags += f"\\blur{shadow_blur}"
-                
-                shadow_formatted_text = f"{{{shadow_override_tags}}}" + formatted_text
-                
-                # Add shadow dialogue line first (so it appears behind)
-                ass_content += f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{shadow_formatted_text}\n"
+                shadow_override = f"\\pos({pos_x + 3},{pos_y + 3})\\blur{shadow_blur}\\1c{shadow_color_ass}"
+                ass_content += f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{{{shadow_override}}}{formatted_text}\n"
 
-            # Create main text layer
-            main_override_tags = f"\\pos({pos_x},{pos_y})"
-            main_formatted_text = f"{{{main_override_tags}}}" + formatted_text
-            
-            # Add main dialogue line (appears on top)
-            ass_content += f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{main_formatted_text}\n"
+                # Main text layer
+                ass_content += f"Dialogue: 1,{start_time},{end_time},Default,,0,0,0,,{formatted_text}\n"
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(ass_content)
 
-        logger.debug("subtitle (ass) was created with drop shadow")
+        logger.debug(f"Subtitle (ass) created with '{animation_style}' animation style and smooth fill.")
 
     def format_time(self, seconds):
         """

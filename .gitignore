@@ -6,3 +6,7 @@ tmp
 captions
 .DS_Store
 ._.DS_Store
+test_smooth_karaoke.py
+test_karaoke_captions.py
+test_complete_workflow.py
+test.py
