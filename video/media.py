@@ -724,9 +724,11 @@ class MediaUtils:
         start = time.time()
         info = self.get_video_info(input_video_path)
         video_duration = info.get("duration", 0)
+        width = info.get("width")
+        height = info.get("height")
 
-        if not video_duration:
-            logger.error("Failed to get video duration from input video")
+        if not video_duration or not width or not height:
+            logger.error("Failed to get required video info from input video")
             return False
 
         # Enhanced color handling for vintage effects
@@ -757,12 +759,17 @@ class MediaUtils:
         context_logger.debug("Starting enhanced colorkey overlay process for vintage effect")
 
         # Enhanced FFmpeg command for better vintage texture overlay
+        # Ensure overlay has alpha by converting to RGBA and scale to base size
+        filter_complex = (
+            f"[1:v]scale={width}:{height},format=rgba,colorkey={color}:{similarity}:{blend}[ckout];"
+            f"[0:v][ckout]overlay=shortest=1:eof_action=repeat[v]"
+        )
         cmd = [
             self.ffmpeg_path, "-y",
             "-i", input_video_path,
             "-stream_loop", "-1",  # Loop the overlay video indefinitely
             "-i", overlay_video_path,
-            "-filter_complex", f"[1:v]colorkey={color}:{similarity}:{blend}[ckout];[0:v][ckout]overlay=shortest=1:eof_action=repeat[v]",
+            "-filter_complex", filter_complex,
             "-map", "[v]",
             "-map", "0:a?",  # Use the audio from the input video if it exists
             "-c:v", "libx264",
@@ -956,10 +963,17 @@ class MediaUtils:
 
         if use_blend_mode:
             # Remove black background and use blend mode for better transparency handling
-            filter_complex = f"[1:v]scale={width}:{height},colorkey=color={colorkey_color}:similarity={colorkey_similarity}:blend={colorkey_blend},format=yuva420p[ol];[0:v][ol]blend=all_mode=overlay:all_opacity={overlay_opacity}[v]"
+            # Use RGBA for robust alpha handling and positional args for colorkey
+            filter_complex = (
+                f"[1:v]scale={width}:{height},format=rgba,colorkey={colorkey_color}:{colorkey_similarity}:{colorkey_blend}[ol];"
+                f"[0:v][ol]blend=all_mode=overlay:all_opacity={overlay_opacity}[v]"
+            )
         else:
-            # Remove black background and use standard overlay
-            filter_complex = f"[1:v]scale={width}:{height},colorkey=color={colorkey_color}:similarity={colorkey_similarity}:blend={colorkey_blend},format=yuva420p[ol];[0:v][ol]overlay=shortest=1:format=yuva420p[v]"
+            # Remove black background and use standard overlay (respects alpha)
+            filter_complex = (
+                f"[1:v]scale={width}:{height},format=rgba,colorkey={colorkey_color}:{colorkey_similarity}:{colorkey_blend}[ol];"
+                f"[0:v][ol]overlay=shortest=1:eof_action=repeat[v]"
+            )
 
         cmd = [
             self.ffmpeg_path, "-y",

@@ -7,6 +7,7 @@ Edit the CONFIG and CAPTION_CONFIG dictionaries below to change video, audio, ba
 import requests
 import sys
 import time
+import os
 
 API_BASE_URL = "http://152.53.86.6:8000"
 
@@ -126,9 +127,134 @@ def main():
     print(f"   • Karaoke Video: {API_BASE_URL}/api/v1/media/storage/{karaoke_video_id}")
     print("\n⏱️  Note: Allow time for background processing before downloading!")
 
+def test_colorkey_overlay():
+    """
+    Predefined test for the colorkey overlay workflow using server assets.
+    Steps:
+      1) Upload main video by URL (no local files needed)
+      2) List server overlays and select one (preferred name if available)
+      3) Apply overlay with colorkey (color=black, similarity=0.15, blend=0.2)
+      4) Poll status until ready
+      5) Download final result to OUTPUT_FILE_PATH
+    """
+
+    # === PREDEFINED SERVER-BASED CONFIG ===
+    MAIN_VIDEO_URL = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"  # vivid sample video
+    OUTPUT_FILE_PATH = "colorkey_test_output.mp4"
+    OVERLAY_LOCAL_PATH = os.path.join("assets", "overlay", "old-overlay.mp4")
+
+    COLORKEY = {
+        "color": "black",
+        "similarity": 0.45,  # more tolerant (key near-black)
+        "blend": 0.12,       # softer edge
+    }
+
+    POLL_INTERVAL_SECONDS = 2.0
+    MAX_WAIT_SECONDS = 300
+
+    print("🎬 Colorkey Overlay Test")
+    print("=" * 60)
+
+    # Using server-based assets and remote URL for main video; no local files required
+
+    # Step 1: Upload main video from URL
+    print("📤 Uploading main video from URL...")
+    upload_main_resp = requests.post(
+        f"{API_BASE_URL}/api/v1/media/storage",
+        data={"url": MAIN_VIDEO_URL, "media_type": "video"},
+    )
+    if upload_main_resp.status_code != 200:
+        print(f"❌ Failed to upload main video: {upload_main_resp.text}")
+        return
+    main_id = upload_main_resp.json().get("file_id")
+    print(f"✅ Main video uploaded: {main_id}")
+
+    # Step 1b: Upload overlay file from local repo assets
+    if not os.path.isfile(OVERLAY_LOCAL_PATH):
+        print(f"❌ Overlay file missing: {OVERLAY_LOCAL_PATH}")
+        return
+    print("📤 Uploading overlay file from repo assets...")
+    with open(OVERLAY_LOCAL_PATH, "rb") as f:
+        overlay_upload = requests.post(
+            f"{API_BASE_URL}/api/v1/media/storage",
+            files={"file": (os.path.basename(OVERLAY_LOCAL_PATH), f, "application/octet-stream")},
+            data={"media_type": "video"},
+        )
+    if overlay_upload.status_code != 200:
+        print(f"❌ Failed to upload overlay: {overlay_upload.text}")
+        return
+    overlay_id = overlay_upload.json().get("file_id")
+    print(f"✅ Overlay uploaded: {overlay_id}")
+
+    # Step 2: Apply colorkey overlay via dedicated endpoint
+    print("🎛️ Applying colorkey overlay (color=black) via dedicated endpoint...")
+    ck_resp = requests.post(
+        f"{API_BASE_URL}/api/v1/media/video-tools/add-colorkey-overlay",
+        data={
+            "video_id": main_id,
+            "overlay_video_id": overlay_id,
+            "color": COLORKEY["color"],
+            "similarity": str(COLORKEY["similarity"]),
+            "blend": str(COLORKEY["blend"]),
+        },
+    )
+    if ck_resp.status_code != 200:
+        print(f"❌ Colorkey overlay request failed: {ck_resp.text}")
+        return
+    result_id = ck_resp.json().get("file_id")
+    print(f"✅ Colorkey job submitted: {result_id}")
+
+    # Step 3: Poll status until ready
+    print("⏳ Polling for completion...")
+    start_time = time.time()
+    status = "processing"
+    while True:
+        status_resp = requests.get(f"{API_BASE_URL}/api/v1/media/storage/{result_id}/status")
+        if status_resp.status_code != 200:
+            print(f"⚠️ Status check failed: {status_resp.text}")
+            time.sleep(POLL_INTERVAL_SECONDS)
+            continue
+        status = status_resp.json().get("status")
+        print(f"   • status: {status}")
+        if status == "ready":
+            break
+        if status == "not_found":
+            print("❌ Job not found on server.")
+            return
+        if time.time() - start_time > MAX_WAIT_SECONDS:
+            print("⏰ Timed out waiting for processing to complete.")
+            return
+        time.sleep(POLL_INTERVAL_SECONDS)
+
+    # Step 4: Download final result
+    print("📥 Downloading final composited video...")
+    download_url = f"{API_BASE_URL}/api/v1/media/storage/{result_id}"
+    out_dir = os.path.dirname(OUTPUT_FILE_PATH)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    with requests.get(download_url, stream=True) as r:
+        if r.status_code != 200:
+            print(f"❌ Download failed: {r.text}")
+            return
+        with open(OUTPUT_FILE_PATH, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+
+    print("🎉 Colorkey overlay complete!")
+    print("=" * 60)
+    print("📋 IDs:")
+    print(f"   • Main Video:   {main_id}")
+    print(f"   • Overlay ID:   {overlay_id}")
+    print(f"   • Result Video: {result_id}")
+    print("\n📥 Download Link:")
+    print(f"   • {download_url}")
+    print(f"💾 Saved to: {OUTPUT_FILE_PATH}")
+
+
 if __name__ == "__main__":
     try:
-        main()
+        test_colorkey_overlay()
     except requests.exceptions.ConnectionError:
         print("❌ Connection failed! Make sure server is running at:", API_BASE_URL)
     except Exception as e:

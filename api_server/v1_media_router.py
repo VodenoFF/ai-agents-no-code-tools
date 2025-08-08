@@ -863,15 +863,14 @@ def apply_overlay(
     def bg_task():
         try:
             utils = MediaUtils()
-            utils.apply_overlay(
+            # Use the dedicated colorkey overlay pipeline for more robust compositing
+            utils.colorkey_overlay(
                 input_video_path=video_path,
                 overlay_video_path=overlay_file_path,
-                output_path=output_path,
-                overlay_opacity=overlay_opacity,
-                use_blend_mode=use_blend_mode,
-                colorkey_color=colorkey_color,
-                colorkey_similarity=colorkey_similarity,
-                colorkey_blend=colorkey_blend,
+                output_video_path=output_path,
+                color=colorkey_color,
+                similarity=colorkey_similarity,
+                blend=colorkey_blend,
             )
         except Exception as e:
             logger.error(f"Error applying overlay in background task: {e}")
