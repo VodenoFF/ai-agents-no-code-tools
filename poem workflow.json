@@ -1,0 +1,2006 @@
+{
+  "name": "poems-working copy",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -560,
+        1440
+      ],
+      "id": "903d7e9d-8eea-4950-9034-ce6c9c1eefdc",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.together.ai/v1/images/generations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "black-forest-labs/FLUX.1-schnell-Free"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $json.image_prompt }}"
+            },
+            {
+              "name": "width",
+              "value": "={{ 720 }}"
+            },
+            {
+              "name": "height",
+              "value": "={{ 1280 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -304,
+        1200
+      ],
+      "id": "9425da2d-dc6c-4fd8-8916-0e7726f8ee9e",
+      "name": "Generate AI image",
+      "alwaysOutputData": false,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "mNLfOzbYFiCcX7ru",
+          "name": "Bearer Auth account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.data[0].url }}"
+            },
+            {
+              "name": "media_type",
+              "value": "image"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        1152
+      ],
+      "id": "7388ffe0-d735-4d24-b458-64bd51065242",
+      "name": "Upload image to server",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage/{{ $('Start generating TTS (chatterbox)').item.json.file_id }}/status",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        688,
+        1264
+      ],
+      "id": "e6f616e5-3d71-4bee-94b5-f1a44aa97723",
+      "name": "Get status of TTS generation",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "ready",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "91402596-3978-4dfc-91b7-9ffe3521b862"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ready"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0c29765e-4213-434c-9bf3-c5e854dd6ee8",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "processing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "processing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4a6cfd86-e690-417e-aa6d-ae497e1177ae",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "not_found",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        848,
+        1328
+      ],
+      "id": "cdb177eb-be6b-475b-bf05-b62aeb44be5c",
+      "name": "TTS status switch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/video-tools/generate/tts-captioned-video",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "specifyBody": "string",
+        "body": "={{ (function () {\n  var cfg = ($('Configure me').item.json || {});\n  var loop = ($('Loop Over Items').item.json || {});\n  var upload = ($('Upload image to server').item.json || {});\n\n  var params = [];\n  function add(k, v) {\n    if (v === undefined || v === null || v === '') { return; }\n    params.push(k + '=' + encodeURIComponent(String(v)));\n  }\n\n  add('background_id', upload.file_id);\n  add('audio_id', $json.tts_audio_id);\n  add('text', loop.text);\n\n  add('caption_animation', 'word');\n  add('caption_config_font_name', cfg.caption_font_name);\n  add('caption_config_font_size', cfg.caption_font_size);\n  add('caption_config_font_color', cfg.caption_font_color);\n  add('caption_config_font_bold', cfg.caption_font_bold);\n  add('caption_config_font_italic', cfg.caption_font_italic);\n  add('caption_config_font_transparency', cfg.caption_font_transparency);\n  add('caption_config_secondary_font_transparency', cfg.caption_secondary_font_transparency);\n  add('caption_config_shadow_color', cfg.caption_shadow_color);\n  add('caption_config_shadow_blur', cfg.caption_shadow_blur);\n  add('caption_config_shadow_transparency', cfg.caption_shadow_transparency);\n  add('caption_config_stroke_color', cfg.caption_stroke_color);\n  add('caption_config_stroke_size', cfg.caption_stroke_size);\n  add('caption_config_stroke_transparency', cfg.caption_stroke_transparency);\n  add('caption_config_subtitle_position', cfg.caption_position);\n\n  return params.join('&');\n})() }}",
+        "options": {
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1264,
+        1312
+      ],
+      "id": "c33c9683-4521-4a32-a2a5-332c5208d0f6",
+      "name": "Start generating captioned TTS video"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage/{{ $('Start generating captioned TTS video').item.json.file_id }}/status",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1664,
+        1328
+      ],
+      "id": "ce20afe1-9552-4ab3-bc16-f102bc2eed2b",
+      "name": "Get video generation status",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "ready",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "91402596-3978-4dfc-91b7-9ffe3521b862"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ready"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0c29765e-4213-434c-9bf3-c5e854dd6ee8",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "processing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "processing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4a6cfd86-e690-417e-aa6d-ae497e1177ae",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "not_found",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1840,
+        1328
+      ],
+      "id": "4efb8af7-6846-4a15-9271-fda0bcaeaa76",
+      "name": "Video generation switch"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a7fdacca-749e-4f69-84fd-50075e0e3409",
+              "name": "video_id",
+              "value": "={{ $('Start generating captioned TTS video').item.json.file_id }}",
+              "type": "string"
+            },
+            {
+              "id": "6c99c267-5c41-4697-ba19-b51d9e8c9a4e",
+              "name": "tts_id",
+              "value": "={{ $('Setup TTS file_id').item.json.tts_audio_id }}",
+              "type": "string"
+            },
+            {
+              "id": "21dd08a7-f785-4829-8609-a99950f21572",
+              "name": "image_id",
+              "value": "={{ $('Upload image to server').item.json.file_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2112,
+        1328
+      ],
+      "id": "6d470fe5-fd0a-4e9d-8464-301d2b151b29",
+      "name": "Setup media fields"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        1664
+      ],
+      "id": "ff8734ef-75af-4bd1-829d-834fa5b4b6d9",
+      "name": "Combine loop items"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/video-tools/merge",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "video_ids",
+              "value": "={{ $json.data.map(item => item.video_id).join(',') }}"
+            },
+            {
+              "name": "background_music_id",
+              "value": "={{ $('Set background music id').item.json.background_music_id ?? '' }}"
+            },
+            {
+              "name": "background_music_volume",
+              "value": "={{ $('Configure me').item.json.background_music_volume }}"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -48,
+        1664
+      ],
+      "id": "7fcbe927-6ec5-4444-8eec-5e73960b3383",
+      "name": "Start merging the videos"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage/{{ $('Start merging the videos').item.json.file_id }}/status",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        384,
+        1712
+      ],
+      "id": "2d82a7a8-5278-4c4d-a39a-c68d19651ac4",
+      "name": "Get status of the video merge"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "ready",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "91402596-3978-4dfc-91b7-9ffe3521b862"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ready"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0c29765e-4213-434c-9bf3-c5e854dd6ee8",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "processing",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "processing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4a6cfd86-e690-417e-aa6d-ae497e1177ae",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "not_found",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        560,
+        1728
+      ],
+      "id": "94679816-2d11-4466-9913-3f79d28b0f00",
+      "name": "Video merge status switch"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        1328
+      ],
+      "id": "18a297e7-34f6-43fa-aaa6-dc933e4ee7e8",
+      "name": "Wait for the error / rate limit to go away",
+      "webhookId": "f54aa193-a429-4d97-a066-c224db5f6f86"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        1264
+      ],
+      "id": "fd2635f5-d503-4107-a0b7-a52464353c4a",
+      "name": "Wait until the TTS gets generated",
+      "webhookId": "fd5aa248-22cb-4741-83ad-a45326d8c7b5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/audio-tools/tts/chatterbox",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $('Loop Over Items').item.json.text }}"
+            },
+            {
+              "name": "sample_audio_id",
+              "value": "={{ $('Set sample voice id').item.json.sample_audio_id ?? '' }}"
+            },
+            {
+              "name": "exaggeration",
+              "value": "={{ $('Configure me').item.json.chatterbox_exaggeration }}"
+            },
+            {
+              "name": "cfg_weight",
+              "value": "={{ $('Configure me').item.json.chatterbox_cfg_weight }}"
+            },
+            {
+              "name": "temperature",
+              "value": "={{ $('Configure me').item.json.chatterbox_temperature }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1264
+      ],
+      "id": "6aae15ac-83c9-46c9-8f12-fdcf76ed735a",
+      "name": "Start generating TTS (chatterbox)"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1472,
+        1328
+      ],
+      "id": "fd4def52-e493-4456-90d2-bcf79be2aedd",
+      "name": "Wait until the video gets generated",
+      "webhookId": "4a40b209-49d7-440d-9740-d7011ae3783f"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        192,
+        1712
+      ],
+      "id": "228685f1-8b81-4dee-bfb3-becd6b7681cb",
+      "name": "Wait until the videos gets merged together",
+      "webhookId": "17218c44-10ce-435c-9d00-197eec791539"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d41f1ef6-7591-41b7-805d-94b58caba5c4",
+              "name": "tts_audio_id",
+              "value": "={{ $('Start generating TTS (chatterbox)').item.json.file_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1040,
+        1312
+      ],
+      "id": "48edabcc-ba4f-4c31-b7df-923322ebb2a7",
+      "name": "Setup TTS file_id"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1392,
+        816
+      ],
+      "id": "c3650f61-dc70-4449-a066-7b2ead572b65",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "To2t443QwCTM5Aiv",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# 1. Create script from the story",
+        "height": 560,
+        "width": 340
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        384
+      ],
+      "id": "787d62cf-c27b-47c1-aa73-9c9f7ce7eec1",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "content": "# 5. Merge the videos",
+        "height": 360,
+        "width": 1180
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -336,
+        1552
+      ],
+      "id": "905e0218-bac2-460c-bb05-f3fb9cba7468",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "# 2. Generate an image with Flux ⚠️\n\n⚠️ add your credentials to the `Generate AI image` node\n\nthe free image generation is slow, if you want to make it faster, just remove the `free`",
+        "height": 520,
+        "width": 580
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -336,
+        992
+      ],
+      "id": "c8faa74b-f6a3-4e72-bb35-a30891d68030",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "content": "# 3. Create speech from text",
+        "height": 520,
+        "width": 900
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        288,
+        992
+      ],
+      "id": "01d04b00-60c5-4271-ab4e-0033a5d0f4a0",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "# 4. Generate captioned video",
+        "height": 520,
+        "width": 1040
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        992
+      ],
+      "id": "3a57b75f-eaf7-4363-99be-5b6c2bdde8bd",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "text": "=<Instructions>\nTake the following poem and break it down into multiple scenes. Break it up at every two lines, and add punctuation to increase emotions for the text to speech model we are going to use.\n\nFor each scene, create an image prompt that we'll use with an image generation tool.\n\nCreate the image generation prompt using the ImagePromptTemplate below.\nInsert the part of the poem in it, and a description of a melancholic illustration showing the scene from the distance.\nAdd \"Do not add text or characters to the final image.\" to the end of each image prompt.\n</Instructions>\n\n<ImagePromptTemplate>\nGenerate an image that matches the content of this poem stanza, based on the provided art style.\n\nPoem:\n{ADD_POEM_PART_HERE}\n\nScene:\n{MELANCHOLIC_ILLUSTRATION}\n\nArt style:\nA minimalist and atmospheric digital illustration. The mood is melancholic, quiet, and contemplative. The composition is clean and focused, often featuring solitary figures or vast, gentle landscapes. The color palette is muted, sophisticated, and limited, using soft tones. Avoid photorealism; the style is painterly and soft-focused.\nUse these keywords: minimalist digital painting, atmospheric, moody, soft lighting, muted color palette, vast landscape, solitary figure, contemplative, nostalgic, cinematic, beautiful scenery.\n</ImagePromptTemplate>\n\n<Poem>\n{{ $('On form submission').item.json['The poem'] }}\n</Poem>\n\n/nothink",
+        "schemaType": "manual",
+        "inputSchema": "{\n    \"type\": \"object\",\n    \"properties\": {\n        \"scenes\": {\n            \"type\": \"array\",\n            \"description\": \"poem scenes\",\n            \"items\": {\n                \"type\": \"object\",\n                \"properties\": {\n                    \"text\": {\n                        \"type\": \"string\",\n                        \"description\": \"the text of the scene, it will be used for TTS\"\n                    },\n                    \"image_prompt\": {\n                        \"type\": \"string\",\n                        \"description\": \"prompt for image generation\"\n                    }\n                },\n                \"required\": [\n                    \"text\",\n                    \"image_prompt\"\n                ]\n            }\n        },\n        \"title\": {\n            \"type\": \"string\",\n            \"description\": \"the title of the youtube video\"\n        },\n        \"description\": {\n            \"type\": \"string\",\n            \"description\": \"the description of the youtube video\"\n        },\n        \"tags\": {\n            \"type\": \"array\",\n            \"description\": \"tags for sharing the video on youtube\",\n            \"items\": {\n                \"type\": \"string\"\n            }\n        }\n    },\n    \"required\": [\n        \"scenes\",\n        \"title\",\n        \"description\",\n        \"tags\"\n    ]\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.1,
+      "position": [
+        1392,
+        608
+      ],
+      "id": "ecee4265-0e77-4c61-9776-090f74b5df87",
+      "name": "Create the script"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "output.scenes",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1952,
+        784
+      ],
+      "id": "76cdc896-95cf-4da2-8ebe-94df22b105be",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7bbb518a-c4f1-49a5-9e72-3e9d939b131b",
+              "name": "AI_AGENTS_NO_CODE_TOOLS_URL",
+              "value": "http://localhost:8000",
+              "type": "string"
+            },
+            {
+              "id": "34f8b468-b669-46ed-be9d-e77e15f36380",
+              "name": "background_music_volume",
+              "value": 0.1,
+              "type": "number"
+            },
+            {
+              "id": "a725aaf1-c91e-4d5b-87f9-d540d309098c",
+              "name": "chatterbox_exaggeration",
+              "value": 0.5,
+              "type": "number"
+            },
+            {
+              "id": "d048e31d-f1cb-48ac-9ff2-13f1028c843e",
+              "name": "chatterbox_cfg_weight",
+              "value": 0.5,
+              "type": "number"
+            },
+            {
+              "id": "96943158-11f6-4731-9d4b-dbae0862d7ab",
+              "name": "chatterbox_temperature",
+              "value": 0.8,
+              "type": "number"
+            },
+            { "id": "capt-1", "name": "caption_style_preset", "value": "cartoon", "type": "string" },
+            { "id": "capt-2", "name": "caption_font_name", "value": "Happy Boy", "type": "string" },
+            { "id": "capt-3", "name": "caption_font_size", "value": 85, "type": "number" },
+            { "id": "capt-4", "name": "caption_font_color", "value": "#FFFFFF", "type": "string" },
+            { "id": "capt-5", "name": "caption_font_bold", "value": true, "type": "boolean" },
+            { "id": "capt-6", "name": "caption_font_italic", "value": false, "type": "boolean" },
+            { "id": "capt-6a", "name": "caption_font_transparency", "value": 1.0, "type": "number" },
+            { "id": "capt-6b", "name": "caption_secondary_font_transparency", "value": 0.0, "type": "number" },
+            { "id": "capt-7", "name": "caption_shadow_color", "value": "#000000", "type": "string" },
+            { "id": "capt-8", "name": "caption_shadow_blur", "value": 5, "type": "number" },
+            { "id": "capt-9", "name": "caption_shadow_transparency", "value": 0.5, "type": "number" },
+            { "id": "capt-10", "name": "caption_stroke_color", "value": "#000000", "type": "string" },
+            { "id": "capt-11", "name": "caption_stroke_size", "value": 4, "type": "number" },
+            { "id": "capt-11a", "name": "caption_stroke_transparency", "value": 0.0, "type": "number" },
+            { "id": "capt-12", "name": "caption_position", "value": "center", "type": "string" },
+            { "id": "overlay-1", "name": "texture_overlay_name", "value": "={{ $('On form submission').item.json['Texture Overlay'] }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -240,
+        624
+      ],
+      "id": "b876e9cd-2ee6-41cf-a52a-dbe72b714636",
+      "name": "Configure me"
+    },
+    {
+      "parameters": {
+        "content": "# Configure me ⚠️\n",
+        "height": 560,
+        "width": 300,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -336,
+        384
+      ],
+      "id": "86ce6a35-b20f-4a78-b665-07bd96922e73",
+      "name": "Sticky Note12"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.AI_AGENTS_NO_CODE_TOOLS_URL }}/health",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        544
+      ],
+      "id": "3b83acd5-93e0-4bc8-b4ed-c362c65f37c3",
+      "name": "HTTP Request",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "errorMessage": "The server is not running or isn't configured"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        240,
+        768
+      ],
+      "id": "59682964-a798-4dd5-9d15-ddb8d8a5f6a7",
+      "name": "Server isn't ready"
+    },
+    {
+      "parameters": {
+        "content": "# Test connection",
+        "height": 560,
+        "width": 420,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        384
+      ],
+      "id": "980e8ca4-d6e3-4e8f-bb15-e646dc0bff81",
+      "name": "Sticky Note15"
+    },
+    {
+      "parameters": {
+        "content": "# 7. cleanup (removing tmp files)\nif you want to delete the generated video too, add it's id to the array",
+        "height": 360,
+        "width": 540
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1808,
+        1552
+      ],
+      "id": "a0554e87-80e8-440f-808e-31aad237a8f3",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "27bcaf96-fcaa-41cb-8a51-436870ce2110",
+              "name": "file_ids",
+              "value": "={{ [...$('Combine loop items').item.json.data.map(item => [item.video_id, item.tts_id, item.image_id]).flat(), $('Configure me').item.json.chatterbox_clone_voice_id, $('Configure me').item.json.background_music_id, $('Start merging the videos').item.json.file_id].filter(Boolean) }}",
+              "type": "array"
+            },
+            {
+              "id": "ff26af44-84ff-46a0-8532-5eeca8dbb099",
+              "name": "",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1840,
+        1664
+      ],
+      "id": "9c8824c3-c8e6-4c9c-9cfb-9354b09a8aa6",
+      "name": "Set file ids to delete"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage/{{ $json.file_ids }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        1664
+      ],
+      "id": "96b5c63b-034c-43d3-8172-f6e6e63e51fc",
+      "name": "Delete tmp files"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "file_ids",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        1664
+      ],
+      "id": "97051e7d-5f6f-4a6c-adc9-bc5077063628",
+      "name": "For each file"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage/{{ $('Apply Texture Overlay').item.json.file_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1024,
+        1728
+      ],
+      "id": "873fdefa-9836-417a-8e16-c642725082c7",
+      "name": "Download the video for Postiz"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/video-tools/apply-overlay",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "video_id", "value": "={{ $('Start merging the videos').item.json.file_id }}" },
+            { "name": "overlay_name", "value": "={{ $('Pick overlay').item.json['Texture Overlay'] }}" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1216,
+        1728
+      ],
+      "id": "apply-overlay-node-1",
+      "name": "Apply Texture Overlay"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1408,
+        1728
+      ],
+      "id": "wait-overlay-node-1",
+      "name": "Wait until the overlay gets applied",
+      "webhookId": "auto-generated-overlay-wait"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage/{{ $('Apply Texture Overlay').item.json.file_id }}/status",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        1728
+      ],
+      "id": "get-overlay-status-node-1",
+      "name": "Get status of overlay"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  { "leftValue": "={{ $json.status }}", "rightValue": "ready", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ready"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  { "leftValue": "={{ $json.status }}", "rightValue": "processing", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "processing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  { "leftValue": "={{ $json.status }}", "rightValue": "not_found", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "failed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1760,
+        1728
+      ],
+      "id": "overlay-status-switch-node-1",
+      "name": "Overlay status switch"
+    },
+    {
+      "parameters": {
+        "formTitle": "AI Poem Video Creator for TikTok (and YouTube shorts + Facebook Reels)",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "The poem",
+              "fieldType": "textarea",
+              "placeholder": "add a poem here - but make sure you use one that's public domain",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Background music",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".mp3"
+            },
+            {
+              "fieldLabel": "Sample voice",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".wav, .mp3"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -576,
+        624
+      ],
+      "id": "f9559291-6c34-4875-b983-f47943138237",
+      "name": "On form submission",
+      "webhookId": "d1eaa60f-9fde-4040-a143-d2d8c784c0f4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6b9c15f3-2db9-4a1e-a688-4fc4e95ded53",
+              "leftValue": "={{ $('On form submission').item.json['Background music'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        512,
+        672
+      ],
+      "id": "80e36dd0-e956-46b3-976a-4b57c2dbc6e4",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('On form submission').first()"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        464
+      ],
+      "id": "37e06b5f-02ee-4cbc-9469-ddd268070c13",
+      "name": "Relay background music"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7aec0c26-8c27-4aa6-bec7-1f65d9fe3aaf",
+              "name": "background_music_id",
+              "value": "={{ $json.file_id ?? '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        704,
+        768
+      ],
+      "id": "fc2d88ab-c9c5-4da1-92fe-b847845ad325",
+      "name": "Set background music id"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6b9c15f3-2db9-4a1e-a688-4fc4e95ded53",
+              "leftValue": "={{ $('On form submission').item.json['Sample voice'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        944,
+        608
+      ],
+      "id": "12cf56f4-72c4-416f-8353-31b225edd6ae",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('On form submission').first()"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        464
+      ],
+      "id": "f0f78c6f-3b83-4b69-8b20-332aa0cdf518",
+      "name": "Relay sample audio"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7aec0c26-8c27-4aa6-bec7-1f65d9fe3aaf",
+              "name": "sample_audio_id",
+              "value": "={{ $json.file_id ?? '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1152,
+        784
+      ],
+      "id": "5139011d-4839-4a48-9b79-4469348814eb",
+      "name": "Set sample voice id"
+    },
+    {
+      "parameters": {
+        "content": "# Upload background music",
+        "height": 560,
+        "width": 400,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        464,
+        384
+      ],
+      "id": "b6439069-812f-4c99-af56-617a918b8df1",
+      "name": "Sticky Note17"
+    },
+    {
+      "parameters": {
+        "content": "# Upload voice sample",
+        "height": 560,
+        "width": 400,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        912,
+        384
+      ],
+      "id": "e0373613-1e97-4e49-9994-ef8d09576f85",
+      "name": "Sticky Note18"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "=Background_music"
+            },
+            {
+              "name": "media_type",
+              "value": "audio"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        608
+      ],
+      "id": "6a3cd003-ac90-4b58-af8b-8c83453c6a76",
+      "name": "Upload background music to the server"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Setup defaults').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/storage",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "=Sample_voice"
+            },
+            {
+              "name": "media_type",
+              "value": "audio"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1152,
+        608
+      ],
+      "id": "49429620-51b7-4db5-8f4b-a9ac4b88d208",
+      "name": "Upload voice sample to the server"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configure me').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/video-tools/overlays",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -416,
+        624
+      ],
+      "id": "get-overlays-node-1",
+      "name": "Get overlays"
+    },
+    {
+      "parameters": {
+        "defineForm": "json",
+        "jsonOutput": "={{ JSON.stringify([{ fieldLabel: 'Texture Overlay', requiredField: true, fieldType: 'dropdown', fieldOptions: { values: (($json.overlays || ($json.data || [])) || []).map(o => ({ option: String(o) })) } }]) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        624
+      ],
+      "id": "pick-overlay-node-1",
+      "name": "Pick overlay",
+      "webhookId": "auto-overlay-picker"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7d55d6da-a78c-4a28-9343-0ea9035a0aa3",
+              "name": "AI_AGENTS_NO_CODE_TOOLS_URL",
+              "value": "={{ $('Configure me').item.json.AI_AGENTS_NO_CODE_TOOLS_URL || $('Configure me').item.json.ai_agents_no_code_tools_url || $json.AI_AGENTS_NO_CODE_TOOLS_URL }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        48,
+        624
+      ],
+      "id": "e33cc13d-2e7c-4d9f-9f95-abe61001320f",
+      "name": "Setup defaults"
+    },
+    {
+      "parameters": {
+        "operation": "sendVideo",
+        "chatId": "768336424",
+        "binaryData": true,
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1408,
+        1712
+      ],
+      "id": "b104e4c0-c0ed-49d1-a654-6a3c433f84db",
+      "name": "Send a video",
+      "webhookId": "ad191a72-033a-497f-9f73-6748819b3a86",
+      "credentials": {
+        "telegramApi": {
+          "id": "67XwC4cfO6lXIwNR",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Combine loop items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate AI image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI image": {
+      "main": [
+        [
+          {
+            "node": "Upload image to server",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for the error / rate limit to go away",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload image to server": {
+      "main": [
+        [
+          {
+            "node": "Start generating TTS (chatterbox)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get status of TTS generation": {
+      "main": [
+        [
+          {
+            "node": "TTS status switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TTS status switch": {
+      "main": [
+        [
+          {
+            "node": "Setup TTS file_id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait until the TTS gets generated",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Start generating TTS (chatterbox)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start generating captioned TTS video": {
+      "main": [
+        [
+          {
+            "node": "Wait until the video gets generated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get video generation status": {
+      "main": [
+        [
+          {
+            "node": "Video generation switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video generation switch": {
+      "main": [
+        [
+          {
+            "node": "Setup media fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait until the video gets generated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Texture Overlay": {
+      "main": [
+        [
+          {
+            "node": "Wait until the overlay gets applied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait until the overlay gets applied": {
+      "main": [
+        [
+          {
+            "node": "Get status of overlay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get status of overlay": {
+      "main": [
+        [
+          {
+            "node": "Overlay status switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Overlay status switch": {
+      "main": [
+        [
+          {
+            "node": "Download the video for Postiz",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait until the overlay gets applied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup media fields": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine loop items": {
+      "main": [
+        [
+          {
+            "node": "Start merging the videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start merging the videos": {
+      "main": [
+        [
+          {
+            "node": "Wait until the videos gets merged together",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get status of the video merge": {
+      "main": [
+        [
+          {
+            "node": "Video merge status switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video merge status switch": {
+      "main": [
+        [
+          {
+            "node": "Apply Texture Overlay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait until the videos gets merged together",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for the error / rate limit to go away": {
+      "main": [
+        [
+          {
+            "node": "Generate AI image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait until the TTS gets generated": {
+      "main": [
+        [
+          {
+            "node": "Get status of TTS generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start generating TTS (chatterbox)": {
+      "main": [
+        [
+          {
+            "node": "Wait until the TTS gets generated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait until the video gets generated": {
+      "main": [
+        [
+          {
+            "node": "Get video generation status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait until the videos gets merged together": {
+      "main": [
+        [
+          {
+            "node": "Get status of the video merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup TTS file_id": {
+      "main": [
+        [
+          {
+            "node": "Start generating captioned TTS video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create the script": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure me": {
+      "main": [
+        [
+          {
+            "node": "Get overlays",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get overlays": {
+      "main": [
+        [
+          {
+            "node": "Pick overlay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick overlay": {
+      "main": [
+        [
+          {
+            "node": "Setup defaults",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Server isn't ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set file ids to delete": {
+      "main": [
+        [
+          {
+            "node": "For each file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "For each file": {
+      "main": [
+        [
+          {
+            "node": "Delete tmp files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download the video for Postiz": {
+      "main": [
+        [
+          {
+            "node": "Send a video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Configure me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Relay background music",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set background music id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relay background music": {
+      "main": [
+        [
+          {
+            "node": "Upload background music to the server",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Relay sample audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set sample voice id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set background music id": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relay sample audio": {
+      "main": [
+        [
+          {
+            "node": "Upload voice sample to the server",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set sample voice id": {
+      "main": [
+        [
+          {
+            "node": "Create the script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload background music to the server": {
+      "main": [
+        [
+          {
+            "node": "Set background music id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload voice sample to the server": {
+      "main": [
+        [
+          {
+            "node": "Set sample voice id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup defaults": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Create the script",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a video": {
+      "main": [
+        [
+          {
+            "node": "Set file ids to delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "62db4856-72ff-461e-9198-a462249a5b1a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d110a4b346bc079e909bd609dcc3dc6771632537f36d9dbf76b869856c381274"
+  },
+  "id": "8X4MLyOS53L6SRBc",
+  "tags": []
+}

@@ -1,0 +1,40 @@
+{
+  "name": "overlay-picker",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configure me').item.json.AI_AGENTS_NO_CODE_TOOLS_URL }}/api/v1/media/video-tools/overlays",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 0, 0 ],
+      "id": "api-overlays",
+      "name": "Get overlays"
+    },
+    {
+      "parameters": {
+        "defineForm": "json",
+        "jsonOutput": "=[{\n  \"fieldLabel\": \"Texture Overlay\",\n  \"requiredField\": true,\n  \"fieldType\": \"dropdown\",\n  \"fieldOptions\": {\n    \"values\": {{ $json.overlays.map(o => { return { option: `${o}` } }) }}\n  },\n  \"default\": \"old-overlay\"\n}]",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [ 240, 0 ],
+      "id": "form-overlays",
+      "name": "Pick overlay",
+      "webhookId": "auto-overlay-picker"
+    }
+  ],
+  "connections": {
+    "Get overlays": {
+      "main": [ [ { "node": "Pick overlay", "type": "main", "index": 0 } ] ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "overlay-picker-1"
+}
+
