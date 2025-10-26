@@ -25,9 +25,6 @@ def iterfile(path: str):
 v1_media_api_router = APIRouter()
 
 storage_path = os.getenv("STORAGE_PATH", os.path.join(os.path.abspath(os.getcwd()), "media"))
-overlay_path = os.getenv("OVERLAY_PATH", "/app/assets/overlay")
-if not os.path.exists(overlay_path):
-    os.makedirs(overlay_path)
 
 storage = Storage(
     storage_path=storage_path,
@@ -356,24 +353,21 @@ def generate_captioned_video(
     ),
     
     image_effect: Optional[str] = Form("ken_burns", description="Effect to apply to the background image, options: ken_burns, pan (default: 'ken_burns')"),
-
-    # New parameter for animation style
-    caption_animation: Optional[Literal["segment", "word"]] = Form("segment", description="Animation style for captions (default: 'segment', use 'word' for karaoke-style)"),
-
+    
     # Flattened subtitle configuration options
     caption_config_line_count: Optional[int] = Form(1, description="Number of lines per subtitle segment (default: 1)", ge=1, le=5),
-    caption_config_line_max_length: Optional[int] = Form(25, description="Maximum characters per line (default: 25)", ge=1, le=200),
-    caption_config_font_size: Optional[int] = Form(120, description="Font size for subtitles (default: 120)", ge=8, le=200),
-    caption_config_font_name: Optional[str] = Form("EB Garamond", description="Font family name (default: 'EB Garamond', see the available fonts form the /fonts endpoint)"),
-    caption_config_font_bold: Optional[bool] = Form(False, description="Whether to use bold font (default: False)"),
-    caption_config_font_italic: Optional[bool] = Form(True, description="Whether to use italic font (default: True)"),
+    caption_config_line_max_length: Optional[int] = Form(1, description="Maximum characters per line (default: 1)", ge=1, le=200),
+    caption_config_font_size: Optional[int] = Form(120, description="Font size for subtitles (default: 50)", ge=8, le=200),
+    caption_config_font_name: Optional[str] = Form("Arial", description="Font family name (default: 'EB Garamond', see the available fonts form the /fonts endpoint)"),
+    caption_config_font_bold: Optional[bool] = Form(True, description="Whether to use bold font (default: True)"),
+    caption_config_font_italic: Optional[bool] = Form(False, description="Whether to use italic font (default: false)"),
     caption_config_font_color: Optional[str] = Form("#fff", description="Font color in hex format (default: '#fff')"),
-    caption_config_subtitle_position: Optional[Literal["top", "center", "bottom"]] = Form("center", description="Vertical position of subtitles (default: 'center')"),
+    caption_config_subtitle_position: Optional[Literal["top", "center", "bottom"]] = Form("top", description="Vertical position of subtitles (default: 'top')"),
     caption_config_shadow_color: Optional[str] = Form("#000", description="Shadow color in hex format (default: '#000')"),
-    caption_config_shadow_transparency: Optional[float] = Form(0.7, description="Shadow transparency from 0.0 to 1.0 (default: 0.7)", ge=0.0, le=1.0),
-    caption_config_shadow_blur: Optional[int] = Form(15, description="Shadow blur radius (default: 15)", ge=0, le=20),
-    caption_config_stroke_color: Optional[str] = Form(None, description="Stroke/outline color in hex format (default: None)"),
-    caption_config_stroke_size: Optional[int] = Form(0, description="Stroke/outline size (default: 0)", ge=0, le=10),
+    caption_config_shadow_transparency: Optional[float] = Form(0.4, description="Shadow transparency from 0.0 to 1.0 (default: 0.4)", ge=0.0, le=1.0),
+    caption_config_shadow_blur: Optional[int] = Form(10, description="Shadow blur radius (default: 10)", ge=0, le=20),
+    caption_config_stroke_color: Optional[str] = Form(None, description="Stroke/outline color in hex format (default: '#000')"),
+    caption_config_stroke_size: Optional[int] = Form(5, description="Stroke/outline size (default: 5)", ge=0, le=10),
 ):
     """
     Generate a captioned video from text and background image.
@@ -457,7 +451,7 @@ def generate_captioned_video(
         
         if tts_audio_id:
             audio_path = storage.get_media_path(tts_audio_id)
-            captions, _ = stt.transcribe(audio_path=audio_path, language=language)
+            captions = stt.transcribe(audio_path=audio_path, language=language)[0]
             builder.set_audio(audio_path)
         # generate TTS and set audio
         else:
@@ -465,16 +459,16 @@ def generate_captioned_video(
                 media_type="audio", file_extension=".wav"
             )
             tmp_file_ids.append(tts_audio_id)
-            captions, _ = tts_manager.kokoro(
+            captions = tts_manager.kokoro(
                 text=text,
                 output_path=audio_path,
                 voice=kokoro_voice,
                 speed=kokoro_speed,
-            )
+            )[0]
             if international:
                 # use whisper to create captions
                 iso_lang_code = lang_config.get("iso639_1")
-                captions, _ = stt.transcribe(audio_path=audio_path, language=iso_lang_code)
+                captions = stt.transcribe(audio_path=audio_path, language=iso_lang_code)[0]
             
             builder.set_audio(audio_path)
 
@@ -485,32 +479,25 @@ def generate_captioned_video(
         )
         tmp_file_ids.append(subtitle_id)
         
-        # --- MODIFICATION START ---
-        # Decide which data to pass to create_subtitle based on animation style
-        captions_data_for_renderer = captions
-        if caption_animation == "segment":
-            # For segment animation, create segments first
-            if international:
-                captions_data_for_renderer = captionsManager.create_subtitle_segments_international(
-                    captions=captions,
-                    lines=parsed_subtitle_options.get('lines', 1),
-                    max_length=parsed_subtitle_options.get('max_length', 1),
-                )
-            else:
-                captions_data_for_renderer = captionsManager.create_subtitle_segments_english(
-                    captions=captions,
-                    lines=parsed_subtitle_options.get('lines', 1),
-                    max_length=parsed_subtitle_options.get('max_length', 1),
-                )
-        # For "word" animation, we pass the raw `captions` list directly
-
+        # create segments based on language
+        if international:
+            segments = captionsManager.create_subtitle_segments_english(
+                captions=captions,
+                lines=parsed_subtitle_options.get('lines', parsed_subtitle_options.get("lines", 1)),
+                max_length=parsed_subtitle_options.get('max_length', parsed_subtitle_options.get("max_length", 1)),
+            )
+        else:
+            segments = captionsManager.create_subtitle_segments_international(
+                captions=captions,
+                lines=parsed_subtitle_options.get('lines', parsed_subtitle_options.get('lines', 1)),
+                max_length=parsed_subtitle_options.get('max_length', parsed_subtitle_options.get('max_length', 1)),
+            )
+        
         captionsManager.create_subtitle(
-            segments=captions_data_for_renderer, # Use the decided data
+            segments=segments,
             output_path=subtitle_path,
             dimensions=dimensions,
-            animation_style=caption_animation, # Pass the new style parameter
 
-            # Pass other options
             font_size=parsed_subtitle_options.get('font_size', 120),
             shadow_blur=parsed_subtitle_options.get('shadow_blur', 10),
             stroke_size=parsed_subtitle_options.get('stroke_size', 5),
@@ -522,10 +509,7 @@ def generate_captioned_video(
             subtitle_position=parsed_subtitle_options.get('subtitle_position', "top"),
             font_color=parsed_subtitle_options.get('font_color', "#fff"),
             shadow_transparency=parsed_subtitle_options.get('shadow_transparency', 0.4),
-            max_length=parsed_subtitle_options.get('max_length', 25),
-            lines=parsed_subtitle_options.get('lines', 1)
         )
-        # --- MODIFICATION END ---
         builder.set_captions(
             file_path=subtitle_path,
         )
@@ -584,13 +568,13 @@ def add_colorkey_overlay(
     video_id: str = Form(..., description="Video ID to overlay"),
     overlay_video_id: str = Form(..., description="Overlay image ID"),
     color: Optional[str] =  Form(
-        "black", description="Set the color for which alpha will be set to 0 (full transparency). Use 'black' for vintage dust overlays or hex code (e.g. '#000000')"
+        "green", description="Set the color for which alpha will be set to 0 (full transparency). Use name of the color or hex code (e.g. 'red' or '#ff0000')"
     ),
     similarity: Optional[float] = Form(
-        0.15, description="Set the radius from the key color within which other colors also have full transparency (Default: 0.15)"
+        0.1, description="Set the radius from the key color within which other colors also have full transparency (Default: 0.1)"
     ),
     blend: Optional[float] = Form(
-        0.2, description="Set how the alpha value for pixels that fall outside the similarity radius is computed (default: 0.2)"
+        0.1, description="Set how the alpha value for pixels that fall outside the similarity radius is computed (default: 0.1)"
     ),
 ):
     """
@@ -636,44 +620,6 @@ def add_colorkey_overlay(
     return {
         "file_id": output_id,
     }
-
-@v1_media_api_router.post("/video-tools/apply-vintage-filter")
-def apply_vintage_filter(
-    background_tasks: BackgroundTasks,
-    video_id: str = Form(..., description="The ID of the video to apply the filter to"),
-    grain_strength: Optional[int] = Form(8, description="Strength of the film grain (0-50, default: 8)"),
-    vignette_intensity: Optional[float] = Form(0.1, description="Intensity of the vignette effect (0.0-1.0, default: 0.1)"),
-):
-    """
-    Apply a vintage film grain and vignette filter to a video.
-    """
-    if not storage.media_exists(video_id):
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"error": f"Video with ID {video_id} not found."},
-        )
-
-    video_path = storage.get_media_path(video_id)
-    output_id, output_path = storage.create_media_filename_with_id(
-        media_type="video", file_extension=".mp4"
-    )
-    tmp_file_id = storage.create_tmp_file(output_id)
-
-    def bg_task():
-        utils = MediaUtils()
-        utils.apply_vintage_filter(
-            input_path=video_path,
-            output_path=output_path,
-            grain_strength=grain_strength,
-            vignette_intensity=vignette_intensity,
-        )
-        storage.delete_media(tmp_file_id)
-
-    logger.info(f"Adding background task for vintage filter with ID: {output_id}")
-    background_tasks.add_task(bg_task)
-    logger.info(f"Background task added for vintage filter with ID: {output_id}")
-
-    return {"file_id": output_id}
 
 @v1_media_api_router.get("/video-tools/extract-frame/{video_id}")
 def extract_frame(
@@ -807,78 +753,3 @@ def get_audio_info(file_id: str):
     info = utils.get_audio_info(audio_path)
     
     return info
-
-
-@v1_media_api_router.get("/video-tools/overlays")
-def list_overlays():
-    """
-    List available video overlays from the assets directory.
-    """
-    try:
-        files = os.listdir(overlay_path)
-        # Return filenames without the .mp4 extension
-        overlays = [os.path.splitext(f)[0] for f in files if f.endswith(".mp4")]
-        return {"overlays": sorted(overlays)}
-    except Exception as e:
-        logger.error(f"Error listing overlays: {e}")
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": "Could not list overlays."}
-        )
-
-
-@v1_media_api_router.post("/video-tools/apply-overlay")
-def apply_overlay(
-    background_tasks: BackgroundTasks,
-    video_id: str = Form(..., description="The ID of the video to apply the overlay to"),
-    overlay_name: str = Form(..., description="The name of the overlay to apply (see /video-tools/overlays)"),
-    overlay_opacity: Optional[float] = Form(0.7, description="Opacity of the overlay (0.0-1.0, default: 0.7)"),
-    use_blend_mode: Optional[bool] = Form(True, description="Use blend mode for better transparency handling (default: True)"),
-    colorkey_color: Optional[str] = Form("black", description="Color to make transparent (default: 'black')"),
-    colorkey_similarity: Optional[float] = Form(0.1, description="Similarity threshold for color removal (0.0-1.0, default: 0.1)"),
-    colorkey_blend: Optional[float] = Form(0.1, description="Blend factor for color removal (0.0-1.0, default: 0.1)"),
-):
-    """
-    Apply a video overlay to a video from the available assets.
-    """
-    if not storage.media_exists(video_id):
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"error": f"Video with ID {video_id} not found."},
-        )
-
-    overlay_file_path = os.path.join(overlay_path, f"{overlay_name}.mp4")
-    if not os.path.exists(overlay_file_path):
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"error": f"Overlay '{overlay_name}' not found."},
-        )
-
-    video_path = storage.get_media_path(video_id)
-    output_id, output_path = storage.create_media_filename_with_id(
-        media_type="video", file_extension=".mp4"
-    )
-    tmp_file_id = storage.create_tmp_file(output_id)
-
-    def bg_task():
-        try:
-            utils = MediaUtils()
-            # Use the dedicated colorkey overlay pipeline for more robust compositing
-            utils.colorkey_overlay(
-                input_video_path=video_path,
-                overlay_video_path=overlay_file_path,
-                output_video_path=output_path,
-                color=colorkey_color,
-                similarity=colorkey_similarity,
-                blend=colorkey_blend,
-            )
-        except Exception as e:
-            logger.error(f"Error applying overlay in background task: {e}")
-        finally:
-            storage.delete_media(tmp_file_id)
-
-    logger.info(f"Adding background task for video overlay with ID: {output_id}")
-    background_tasks.add_task(bg_task)
-    logger.info(f"Background task added for video overlay with ID: {output_id}")
-
-    return {"file_id": output_id}

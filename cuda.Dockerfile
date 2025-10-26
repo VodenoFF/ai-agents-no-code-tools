@@ -36,11 +36,10 @@ ENV LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/nvidia/cudnn/lib:$LD
 COPY api_server /app/api_server
 COPY utils /app/utils
 COPY video /app/video
-COPY assets/overlay /app/assets/overlay
 COPY server.py /app/server.py
 
 ENV PYTHONUNBUFFERED=1
 
-EXPOSE 8000
+EXPOSE 8002
 
-CMD ["fastapi", "run", "server.py", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["fastapi", "run", "server.py", "--host", "127.0.0.1", "--port", "8002"]
